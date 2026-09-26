@@ -62,8 +62,8 @@ KidSpeak/
 Tested with Python 3.10, CUDA 11.8, PyTorch 2.4 and 4× A6000 / A100 GPUs.
 
 ```bash
-conda create -y -n kidspeak python=3.10
-conda activate kidspeak
+conda create -y -p envs/kidspeak python=3.10     # the environment lives inside the repo
+conda activate ./envs/kidspeak
 pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements.txt
 ```
@@ -72,11 +72,11 @@ pip install -r requirements.txt
 
 ### 2.1 Audio
 
-Download the raw audio and put it under `data/KIDS/`. The JSON files refer to audio by paths relative
-to `data/`.
+Download the raw audio and put it under `dataset/KIDS/`. The JSON files refer to audio by paths relative
+to `dataset/`.
 
 ```
-data/KIDS/
+dataset/KIDS/
 ├── ultrasuite_disorder/        # UltraSuite UPX (speech sound disorders)
 │   └── core-upx/{core,doc}/
 ├── talkbank_dataset/v1.3/official_v1.3/
@@ -89,11 +89,11 @@ data/KIDS/
 
 * **UltraSuite UPX:** get it from the [UltraSuite website](https://ultrasuite.github.io/download/). Only
   `core-upx` is needed (~191 GB):
-  `mkdir -p data/KIDS/ultrasuite_disorder && rsync -av ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/core-upx data/KIDS/ultrasuite_disorder/`
+  `mkdir -p dataset/KIDS/ultrasuite_disorder && rsync -av ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/core-upx dataset/KIDS/ultrasuite_disorder/`
 * **English children:** this is the child speech corpus from Kennedy et al., *Child Speech Recognition in
   Human-Robot Interaction: Evaluations and Recommendations* (HRI 2017), licensed CC-BY 4.0. Download it
-  from [Zenodo](https://zenodo.org/records/200495) and unzip it into `data/KIDS/`:
-  `wget https://zenodo.org/records/200495/files/english_children.zip && unzip english_children.zip -d data/KIDS/`
+  from [Zenodo](https://zenodo.org/records/200495) and unzip it into `dataset/KIDS/`:
+  `wget https://zenodo.org/records/200495/files/english_children.zip && unzip english_children.zip -d dataset/KIDS/`
 * **TalkBank ENNI:** the audio and transcripts come from the
   [ENNI corpus](https://talkbank.org/childes/access/Clinical-Eng/ENNI.html) in CHILDES. They are segmented
   into utterances with our aligner **FASA** (see the paper). You need to follow the TalkBank usage rules.
@@ -103,7 +103,7 @@ data/KIDS/
 Download the instruction-tuning files used in the paper from Hugging Face:
 
 ```bash
-huggingface-cli download jsun39/KidSpeak-Instruct --repo-type dataset --local-dir data/json
+huggingface-cli download jsun39/KidSpeak-Instruct --repo-type dataset --local-dir dataset/json
 ```
 
 | split | UltraSuite | ENNI | English children | merged |
@@ -127,17 +127,17 @@ Each sample is one audio clip with a multi-turn conversation:
 ```
 
 *Optional:* you can rebuild the JSON files from the raw data with
-`python data_prep/build_dataset.py --data_root data --output_dir data/json`. The prompts are sampled at
+`python data_prep/build_dataset.py --data_root dataset --output_dir dataset/json`. The prompts are sampled at
 random, so the rebuilt files will not be identical to the released ones.
 
 ## 3. Training
 
 ```bash
-bash scripts/train.sh small 4      # <whisper_model> <num_gpus>
+bash scripts/train.sh small 4 10   # <whisper_model> <num_gpus> <epochs>
 ```
 
-This runs `train.py` on `data/json/merged_train.json` and writes a checkpoint to
-`checkpoints/kidspeak_small/pytorch_model_<epoch>.pt` after every epoch. The run config is saved as
+This runs `train.py` on `dataset/json/merged_train.json` and writes a checkpoint to
+`checkpoint/kidspeak_small/pytorch_model_<epoch>.pt` after every epoch. The run config is saved as
 `config.yaml` next to the checkpoints.
 
 * The Whisper size is `tiny | base | small | medium | large-v3`.
@@ -149,13 +149,13 @@ This runs `train.py` on `data/json/merged_train.json` and writes a checkpoint to
 ## 4. Evaluation
 
 ```bash
-bash scripts/eval.sh small 9       # <whisper_model> <epoch>
+bash scripts/eval.sh small 9 test  # <whisper_model> <epoch> <split: test | val>
 ```
 
-For each test set (UltraSuite, ENNI, English children), the script:
+For each dataset of the split (UltraSuite, ENNI, English children), the script:
 
 1. runs `inference.py`, which asks every question of each test conversation in turn and writes
-   `results/kidspeak_small/epoch_9/<task>.jsonl`, and
+   `outputs/kidspeak_small/epoch_9/test/<task>.jsonl`, and
 2. runs `compute_metrics.py`, which scores the predictions and writes `<task>.metrics.json`:
 
 ```json
@@ -168,9 +168,9 @@ are 0–3, 4–5, 6–8, 9–12 and 13–17 years.
 To score a single test file:
 
 ```bash
-python inference.py --ckpt checkpoints/kidspeak_small/pytorch_model_9.pt \
-    --test_file data/json/ultrasuite_disorder_test.json --output results/ultrasuite.jsonl
-python compute_metrics.py --pred results/ultrasuite.jsonl
+python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
+    --test_file dataset/json/ultrasuite_disorder_test.json --output outputs/ultrasuite.jsonl
+python compute_metrics.py --pred outputs/ultrasuite.jsonl
 ```
 
 ## Citation

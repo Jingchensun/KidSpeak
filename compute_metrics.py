@@ -13,7 +13,7 @@ the prompt templates in data_prep/prompts, then scored with simple keyword / reg
     age               age_q.txt                           exact-age accuracy and age-group accuracy
 
 Example:
-    python compute_metrics.py --pred results/kidspeak_small/ultrasuite_disorder.jsonl
+    python compute_metrics.py --pred outputs/kidspeak_small/ultrasuite_disorder.jsonl
 """
 import argparse
 import json

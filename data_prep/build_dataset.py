@@ -2,7 +2,7 @@
 
 Expected layout under --data_root (audio_name paths in the JSON are relative to it):
 
-    data/KIDS/
+    dataset/KIDS/
     ├── ultrasuite_disorder/
     │   └── core-upx/                      # official UltraSuite download
     │       ├── doc/speakers               # speaker metadata incl. SSD subtype (TSV)
@@ -160,8 +160,8 @@ def build_english_children(data_root):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_root', type=str, default='data', help='directory that contains KIDS/')
-    parser.add_argument('--output_dir', type=str, default='data/json')
+    parser.add_argument('--data_root', type=str, default='dataset', help='directory that contains KIDS/')
+    parser.add_argument('--output_dir', type=str, default='dataset/json')
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
     random.seed(args.seed)

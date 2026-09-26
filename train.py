@@ -2,8 +2,8 @@
 
 Example (4 GPUs):
     deepspeed --num_gpus 4 train.py \
-        --train_file data/json/merged_train.json --audio_root data \
-        --save_dir checkpoints/kidspeak_small --whisper_model small
+        --train_file dataset/json/merged_train.json --audio_root dataset \
+        --save_dir checkpoint/kidspeak_small --whisper_model small
 """
 import argparse
 import json
@@ -24,11 +24,12 @@ from kidspeak import AudioInstructionDataset, KidSpeak
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file', type=str, required=True)
-    parser.add_argument('--audio_root', type=str, default='data', help='directory that audio_name paths are relative to')
+    parser.add_argument('--audio_root', type=str, default='dataset', help='directory that audio_name paths are relative to')
     parser.add_argument('--save_dir', type=str, required=True)
     parser.add_argument('--config', type=str, default='configs/kidspeak.yaml')
     parser.add_argument('--ds_config', type=str, default='configs/ds_config.json')
     parser.add_argument('--whisper_model', type=str, default=None, help='overrides whisper_model in --config')
+    parser.add_argument('--epochs', type=int, default=None, help='overrides epochs in --config')
     parser.add_argument('--local_rank', type=int, default=0)  # set by the deepspeed launcher
     args = parser.parse_args()
 
@@ -36,6 +37,8 @@ def parse_args():
         cfg = yaml.safe_load(f)
     if args.whisper_model:
         cfg['whisper_model'] = args.whisper_model
+    if args.epochs:
+        cfg['epochs'] = args.epochs
     return args, cfg
 
 
@@ -76,8 +79,12 @@ def main():
     ds_config['scheduler']['params']['total_num_steps'] = total_steps
     ds_config['scheduler']['params']['warmup_num_steps'] = max(10, int(total_steps * cfg['warmup_rate']))
 
-    # Model
+    # Model (rank 0 goes first so that Whisper / Vicuna weights are downloaded only once)
+    if rank != 0:
+        torch.distributed.barrier()
     model = KidSpeak(**cfg)
+    if rank == 0:
+        torch.distributed.barrier()
     engine, _, _, _ = deepspeed.initialize(
         model=model,
         model_parameters=[p for p in model.parameters() if p.requires_grad],

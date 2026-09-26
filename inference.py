@@ -5,9 +5,9 @@ previous answers as history). Results are written as JSON lines:
     {"audio": ..., "question": ..., "prediction": ..., "answer": ...}
 
 Example:
-    python inference.py --ckpt checkpoints/kidspeak_small/pytorch_model_9.pt \
-        --test_file data/json/ultrasuite_disorder_test.json --audio_root data \
-        --output results/kidspeak_small/ultrasuite_disorder.jsonl
+    python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
+        --test_file dataset/json/ultrasuite_disorder_test.json --audio_root dataset \
+        --output outputs/kidspeak_small/ultrasuite_disorder.jsonl
 """
 import argparse
 import json
@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckpt', type=str, required=True, help='pytorch_model_<epoch>.pt saved by train.py')
     parser.add_argument('--test_file', type=str, required=True)
-    parser.add_argument('--audio_root', type=str, default='data')
+    parser.add_argument('--audio_root', type=str, default='dataset')
     parser.add_argument('--output', type=str, required=True)
     parser.add_argument('--config', type=str, default=None,
                         help='defaults to the config.yaml saved next to the checkpoint')

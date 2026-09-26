@@ -4,7 +4,9 @@ __pycache__/
 .ipynb_checkpoints/
 
 # data, checkpoints and outputs are not tracked
-data/
-checkpoints/
-results/
+dataset/
+checkpoint/
+envs/
+outputs/
 *.log
+.cache/
