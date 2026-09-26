@@ -4,12 +4,13 @@ Expected layout under --data_root (audio_name paths in the JSON are relative to 
 
     data/KIDS/
     ├── ultrasuite_disorder/
-    │   ├── speakers                       # UltraSuite speaker metadata (TSV)
-    │   └── core-upx/core/<speaker>/BL*/*.wav (+ .txt)
+    │   └── core-upx/                      # official UltraSuite download
+    │       ├── doc/speakers               # speaker metadata incl. SSD subtype (TSV)
+    │       └── core/<speaker>/BL*/*.wav (+ .txt)
     ├── talkbank_dataset/v1.3/official_v1.3/
     │   ├── talkbank_childes.csv           # FASA metadata
     │   └── usable/FASA_ENNI/out/<id>/*.mp3 (+ .txt)
-    └── english_children/
+    └── english_children/                  # english_children.zip from https://zenodo.org/records/200495
         ├── english_free_speech/files_cut_by_sentences/**.wav
         └── english_words_sentences/<speaker>/**/studio_mic/sentences/*.wav
 
@@ -68,7 +69,7 @@ def split(samples, seeds=(42, 42)):
 # ------------------------- UltraSuite (speech sound disorders) -------------------------
 def build_ultrasuite(data_root):
     root = os.path.join(data_root, 'KIDS/ultrasuite_disorder')
-    speakers = pd.read_csv(os.path.join(root, 'speakers'), sep='\t')
+    speakers = pd.read_csv(os.path.join(root, 'core-upx/doc/speakers'), sep='\t')
     subtype = dict(zip(speakers['speaker_id'], speakers['ssd_subtype']))
     age = dict(zip(speakers['speaker_id'], speakers['age']))
     sex = dict(zip(speakers['speaker_id'], speakers['sex']))

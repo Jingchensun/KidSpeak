@@ -78,19 +78,22 @@ to `data/`.
 ```
 data/KIDS/
 ├── ultrasuite_disorder/        # UltraSuite UPX (speech sound disorders)
-│   ├── speakers
-│   └── core-upx/core/<speaker>/BL*/*.wav
+│   └── core-upx/{core,doc}/
 ├── talkbank_dataset/v1.3/official_v1.3/
 │   ├── talkbank_childes.csv
 │   └── usable/FASA_ENNI/out/<id>/*.mp3
-└── english_children/           # native / non-native English children
+└── english_children/           # Kennedy et al. (HRI 2017), native / non-native UK children
     ├── english_free_speech/files_cut_by_sentences/
     └── english_words_sentences/
 ```
 
 * **UltraSuite UPX:** get it from the [UltraSuite website](https://ultrasuite.github.io/download/). Only
   `core-upx` is needed (~191 GB):
-  `rsync -av ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/core-upx .`
+  `mkdir -p data/KIDS/ultrasuite_disorder && rsync -av ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/core-upx data/KIDS/ultrasuite_disorder/`
+* **English children:** this is the child speech corpus from Kennedy et al., *Child Speech Recognition in
+  Human-Robot Interaction: Evaluations and Recommendations* (HRI 2017), licensed CC-BY 4.0. Download it
+  from [Zenodo](https://zenodo.org/records/200495) and unzip it into `data/KIDS/`:
+  `wget https://zenodo.org/records/200495/files/english_children.zip && unzip english_children.zip -d data/KIDS/`
 * **TalkBank ENNI:** the audio and transcripts come from the
   [ENNI corpus](https://talkbank.org/childes/access/Clinical-Eng/ENNI.html) in CHILDES. They are segmented
   into utterances with our aligner **FASA** (see the paper). You need to follow the TalkBank usage rules.
@@ -185,5 +188,5 @@ python compute_metrics.py --pred results/ultrasuite.jsonl
 
 This codebase builds on [PandaGPT](https://github.com/yxuansu/PandaGPT),
 [OpenAI Whisper](https://github.com/openai/whisper), [Vicuna](https://github.com/lm-sys/FastChat) and
-[PEFT](https://github.com/huggingface/peft). The data comes from [UltraSuite](https://ultrasuite.github.io/)
-and [TalkBank / CHILDES](https://talkbank.org/). Please follow the license terms of each dataset.
+[PEFT](https://github.com/huggingface/peft). The data comes from [UltraSuite](https://ultrasuite.github.io/),
+[TalkBank / CHILDES](https://talkbank.org/) and the [child speech corpus of Kennedy et al. (2017)](https://zenodo.org/records/200495). Please follow the license terms of each dataset.
