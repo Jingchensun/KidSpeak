@@ -1,0 +1,20 @@
+Is the given speech sample indicative of a speech disorder or impairment?
+Does the speaker in this audio clip exhibit any signs of speech impairment?
+Can you identify if the speech in this recording is disordered or typical?
+Is there any indication of speech impairment in this audio sample?
+Does this speech sample reflect normal speech or a speech disorder?
+Based on the speech you hear, does the speaker have a speech disorder?
+Is the speech in this clip typical or does it show signs of a disorder?
+Can you classify the speech in this audio as disordered or not disordered?
+Does the given speech recording exhibit characteristics of speech impairment?
+Is the speaker's speech in this sample normal or impaired?
+From the speech in this recording, can you determine if there is a disorder present?
+Is the speech pattern in this clip consistent with a speech disorder?
+Does the speaker in this audio exhibit typical speech or a speech impairment?
+Can you identify any speech disorders in this audio sample?
+Is the speech in this recording free from any impairments or disorders?
+Does this audio sample contain disordered speech?
+Is the speech in this recording normal or does it show signs of impairment?
+Based on the speech sample, is there an indication of a speech disorder?
+Is the speech in this audio clip typical or impaired?
+Does this speech sample show any signs of a speech disorder or impairment?

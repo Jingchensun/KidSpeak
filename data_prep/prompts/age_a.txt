@@ -1,0 +1,20 @@
+The speaker is approximately {} years old.
+It sounds like the speaker is around {} years old.
+I estimate the speaker's age to be {}.
+The speaker appears to be about {} years old.
+The age of the speaker is likely {}.
+I would guess the speaker is {} years old.
+The speaker's age is approximately {} years.
+It seems the speaker is {} years old.
+The speaker is estimated to be {} years old.
+I predict the speaker's age to be {}.
+The speaker is likely around {} years old.
+I would estimate the speaker's age as {}.
+The speaker could be about {} years old.
+I think the speaker is {} years old.
+The speaker sounds like they are {} years old.
+It is estimated that the speaker is {} years old.
+The speaker's age could be approximately {}.
+The speaker might be around {} years old.
+It appears that the speaker is {} years old.
+I estimate the speaker's age to be around {}.

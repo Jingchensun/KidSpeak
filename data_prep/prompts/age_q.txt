@@ -1,0 +1,16 @@
+Predict the age of the speaker in this speech.
+Determine the speaker's age based on the audio.
+Can you estimate the age of the person speaking?
+Analyze the speech and predict the speaker's age.
+Please specify the age of the speaker from the speech.
+Evaluate the audio and determine the speaker’s age.
+Identify the approximate age of the speaker in this recording.
+Can you tell the age of the speaker from this speech?
+Assess the age of the speaker in the provided audio.
+Listen to the speech and predict the age of the speaker.
+Please analyze the audio to determine the speaker's age.
+From the speech, can you estimate the speaker's age?
+Could you identify the age of the speaker from the audio?
+Based on the speech, predict the age of the speaker.
+Listen to the speech and tell me the approximate age of the speaker.
+Assess and predict the age of the speaker from the speech.

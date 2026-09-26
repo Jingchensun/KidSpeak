@@ -1,0 +1,16 @@
+# ---------------- model ----------------
+whisper_model: small              # tiny | base | small | medium | large-v3 ...
+llm: jsun39/kidspeak_vicuna       # Vicuna-7B v0 on the Hugging Face Hub
+max_tgt_len: 256                  # max text tokens per sample
+
+# LoRA (applied to q/k/v/o projections of the LLM)
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.1
+
+# ---------------- training ----------------
+# batch size, learning rate, optimizer and precision are set in configs/ds_config.json
+epochs: 10
+warmup_rate: 0.1
+seed: 0
+logging_step: 5
