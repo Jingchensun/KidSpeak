@@ -25,7 +25,7 @@ import ast
 import json
 import os
 import random
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import pandas as pd
 
@@ -124,6 +124,7 @@ def build_ultrasuite(data_root, seed):
 
 
 # ------------------------- TalkBank ENNI (TD vs. SLI) -------------------------
+# The binary disorder question is balanced between TD and SLI clips (see below).
 def build_enni(data_root, seed):
     root = os.path.join(data_root, 'KIDS/talkbank_dataset/v1.3/official_v1.3')
     meta = pd.read_csv(os.path.join(root, 'talkbank_childes.csv'))
@@ -158,6 +159,26 @@ def build_enni(data_root, seed):
             samples.append({'audio_name': os.path.relpath(mp3, data_root), 'conversation': conv,
                             'speaker': folder_id})
     assignment = speaker_split(strata, seed)
+
+    # TD children produce ~83% of the clips. To balance the binary disorder question, only a random subset
+    # of TD children (per split) keeps it, so that TD and SLI clips with this question are roughly 1:1.
+    # All clips are kept for the other tasks. The disorder question is the last turn of every ENNI dialogue.
+    rng = random.Random(seed)
+    clips = Counter(sample['speaker'] for sample in samples)
+    for split in SPLITS:
+        n_sli = sum(clips[spk] for spk, s in assignment.items() if s == split and strata[spk] == 'SLI')
+        td = sorted(spk for spk, s in assignment.items() if s == split and strata[spk] == 'TD')
+        rng.shuffle(td)
+        keep, n_td = set(), 0
+        for spk in td:
+            if n_td >= n_sli:
+                break
+            keep.add(spk)
+            n_td += clips[spk]
+        for sample in samples:
+            if strata[sample['speaker']] == 'TD' and assignment[sample['speaker']] == split and sample['speaker'] not in keep:
+                assert sample['conversation'][-2]['value'] in P['binary_q']
+                sample['conversation'] = sample['conversation'][:-2]
     return group(samples, assignment), assignment
 
 

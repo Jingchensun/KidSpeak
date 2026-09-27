@@ -91,6 +91,11 @@ speaker level**, stratified by label, so every child is in exactly one split.
 
 The speaker IDs of every split are listed in `dataset/json/split_stats.json`.
 
+**Balancing the ENNI disorder question.** In ENNI, TD children produce ~83% of the clips. All clips are kept
+for transcription, age and gender, but within each split the binary disorder question is only asked for SLI
+clips and for a random subset of TD children with about the same number of clips. This gives
+1,756 SLI / 1,765 TD questions in train (47 / 41 children) and 769 SLI / 812 TD in test (20 / 18 children).
+
 ### 2.1 Audio
 
 Put the audio under `dataset/KIDS/`. The JSON files refer to audio by paths relative to `dataset/`.
