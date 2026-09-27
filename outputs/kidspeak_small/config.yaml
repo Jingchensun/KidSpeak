@@ -1,4 +1,4 @@
-epochs: 1
+epochs: 10
 llm: jsun39/kidspeak_vicuna
 logging_step: 5
 lora_alpha: 32

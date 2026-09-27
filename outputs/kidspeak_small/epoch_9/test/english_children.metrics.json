@@ -1,10 +1,10 @@
 {
-  "gender_acc": 52.75,
+  "gender_acc": 59.34,
   "gender_majority_baseline": 58.24,
-  "dialect_acc": 41.76,
+  "dialect_acc": 43.96,
   "dialect_majority_baseline": 58.24,
-  "wer": 31.76,
-  "cer": 25.29,
+  "wer": 29.56,
+  "cer": 21.86,
   "num_samples": {
     "gender": 91,
     "dialect": 91,
