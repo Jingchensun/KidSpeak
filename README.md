@@ -75,20 +75,19 @@ pip install -r requirements.txt
 
 ## 2. Data
 
-KidSpeak is trained on three corpora of child speech. All splits are **speaker-disjoint**: every child is
-in exactly one of train / val / test.
+KidSpeak is trained on three corpora of child speech. Each corpus is split **7:3 into train / test at the
+speaker level**, stratified by label, so every child is in exactly one split.
 
 | Corpus | Children | Clips | Tasks | Split |
 |---|---:|---:|---|---|
-| **UltraSuite** – UPX (20, SSD with subtype) + UXSSD (8, SSD) + UXTD (58, typically developing) | 86 | 8,331 | disorder (binary), SSD subtype (UPX only), age, gender | UXTD: official speaker split; UPX / UXSSD: stratified by SSD subtype |
+| **UltraSuite** – UPX (20, SSD with subtype) + UXSSD (8, SSD) + UXTD (58, typically developing) | 86 | 8,331 | disorder (binary), SSD subtype (UPX only), age, gender | stratified by SSD subtype (UPX), SSD (UXSSD), typical (UXTD) |
 | **ENNI** (TalkBank CHILDES, TD vs. SLI) | 351 | 14,654 | description, transcription, age, gender, disorder (binary) | stratified by TD / SLI |
 | **English children** (Kennedy et al., HRI 2017) | 11 | 272 | description, transcription, dialect, gender | stratified by native / non-native |
 
 | split | UltraSuite | ENNI | English children | merged |
 |---|---:|---:|---:|---:|
-| train | 5,669 (58 children) | 10,309 (245) | 181 (7) | 16,159 |
-| val | 763 (9) | 2,135 (53) | 46 (2) | 2,944 |
-| test | 1,899 (19) | 2,210 (53) | 45 (2) | 4,154 |
+| train | 5,870 (60 children) | 10,349 (246) | 181 (7) | 16,400 |
+| test | 2,461 (26) | 4,305 (105) | 91 (4) | 6,857 |
 
 The speaker IDs of every split are listed in `dataset/json/split_stats.json`.
 
@@ -135,7 +134,7 @@ Build the multi-turn instruction data from the audio and metadata:
 python data_prep/build_dataset.py --data_root dataset --output_dir dataset/json
 ```
 
-This writes `{ultrasuite,enni,english_children}_{train,val,test}.json`, `merged_{train,val,test}.json`
+This writes `{ultrasuite,enni,english_children}_{train,test}.json`, `merged_{train,test}.json`
 and `split_stats.json`. The same files are also available on Hugging Face:
 `huggingface-cli download jsun39/KidSpeak-Instruct --repo-type dataset --local-dir dataset/json`.
 
@@ -173,7 +172,7 @@ This runs `train.py` on `dataset/json/merged_train.json` and writes a checkpoint
 ## 4. Evaluation
 
 ```bash
-bash scripts/eval.sh small 9 test 4   # <whisper_model> <epoch> <split: test | val> <num_gpus>
+bash scripts/eval.sh small 9 test 4   # <whisper_model> <epoch> <split> <num_gpus>
 ```
 
 For each dataset of the split (UltraSuite, ENNI, English children), the script:

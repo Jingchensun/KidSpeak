@@ -1,6 +1,7 @@
 """Build the KidSpeak instruction-tuning JSON files from the raw corpora.
 
-All splits are speaker-disjoint: every child appears in exactly one of train / val / test.
+Every corpus is split 7:3 into train / test at the speaker level (stratified by label), so every child
+appears in exactly one split.
 
 Expected layout under --data_root (audio_name paths in the JSON are relative to it):
 
@@ -16,8 +17,8 @@ Expected layout under --data_root (audio_name paths in the JSON are relative to 
         ├── english_free_speech/files_cut_by_sentences/<spk>/*.wav
         └── english_words_sentences/<spk>/**/studio_mic/sentences/*.wav
 
-Outputs (in --output_dir): {ultrasuite,enni,english_children}_{train,val,test}.json,
-merged_{train,val,test}.json and split_stats.json.
+Outputs (in --output_dir): {ultrasuite,enni,english_children}_{train,test}.json,
+merged_{train,test}.json and split_stats.json.
 """
 import argparse
 import ast
@@ -29,7 +30,7 @@ from collections import defaultdict
 import pandas as pd
 
 PROMPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompts')
-SPLITS = ('train', 'val', 'test')
+SPLITS = ('train', 'test')
 
 
 def load_prompts(name):
@@ -59,11 +60,11 @@ def qa(question_key, answer):
     return [{'from': 'human', 'value': random.choice(P[question_key])}, {'from': 'gpt', 'value': answer}]
 
 
-def speaker_split(speaker_label, seed, val_ratio=0.15, test_ratio=0.15):
-    """Stratified speaker-level split. `speaker_label` maps speaker -> stratum (e.g. TD / SLI).
+def speaker_split(speaker_label, seed, test_ratio=0.3):
+    """Stratified speaker-level train / test split. `speaker_label` maps speaker -> stratum (e.g. TD / SLI).
 
-    Within each stratum, at least one speaker goes to test (if the stratum has >= 2 speakers);
-    val only takes speakers if at least one is left for train.
+    Within each stratum, round(n * test_ratio) speakers go to test, and at least one if the stratum has
+    two or more speakers.
     """
     rng = random.Random(seed)
     by_label = defaultdict(list)
@@ -75,9 +76,8 @@ def speaker_split(speaker_label, seed, val_ratio=0.15, test_ratio=0.15):
         rng.shuffle(spks)
         n = len(spks)
         n_test = max(1, round(n * test_ratio)) if n >= 2 else 0
-        n_val = round(n * val_ratio) if n - n_test - round(n * val_ratio) >= 1 else 0
         for i, spk in enumerate(spks):
-            assignment[spk] = 'test' if i < n_test else 'val' if i < n_test + n_val else 'train'
+            assignment[spk] = 'test' if i < n_test else 'train'
     return assignment
 
 
@@ -91,7 +91,7 @@ def group(samples, assignment):
 # ------------------------- UltraSuite (UPX + UXSSD: disorder, UXTD: typical) -------------------------
 def build_ultrasuite(data_root, seed):
     root = os.path.join(data_root, 'KIDS/ultrasuite_disorder')
-    samples, strata, official = [], {}, {}
+    samples, strata = [], {}
     for subset in ('upx', 'uxssd', 'uxtd'):
         speakers = pd.read_csv(os.path.join(root, f'core-{subset}/doc/speakers'), sep='\t').set_index('speaker_id')
         for spk, info in speakers.iterrows():
@@ -101,7 +101,7 @@ def build_ultrasuite(data_root, seed):
             speaker = f'{subset}/{spk}'  # speaker ids are only unique within a subset
             if subset == 'uxtd':
                 sessions = ['']  # UXTD has no session folders
-                official[speaker] = {'train': 'train', 'dev': 'val', 'test': 'test'}[info['subset']]
+                strata[speaker] = 'typical'
             else:
                 sessions = sorted(s for s in os.listdir(spk_dir) if s.startswith('BL'))  # baseline sessions only
                 strata[speaker] = info['ssd_subtype'] if subset == 'upx' else 'ssd'
@@ -118,9 +118,8 @@ def build_ultrasuite(data_root, seed):
                     conv += qa('gender_q', random.choice(P['gender_girl' if info['sex'].lower() == 'female' else 'gender_boy']))
                     samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv,
                                     'speaker': speaker})
-    # UPX is split within each SSD subtype, UXSSD as one stratum, UXTD follows its official speaker split
+    # strata: UPX by SSD subtype, UXSSD as one group, UXTD as one group
     assignment = speaker_split(strata, seed)
-    assignment.update(official)
     return group(samples, assignment), assignment
 
 

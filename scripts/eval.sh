@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: bash scripts/eval.sh [whisper_model] [epoch] [split] [num_gpus]
 # e.g.   bash scripts/eval.sh small 9 test 4
-# For each dataset of the split (test | val), the test set is split into <num_gpus> contiguous shards that
+# For each dataset of the split (default: test), the set is split into <num_gpus> contiguous shards that
 # run in parallel (one per GPU), the shards are merged in order, and the metrics are computed.
 set -e
 WHISPER=${1:-small}
