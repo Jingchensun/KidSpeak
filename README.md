@@ -80,16 +80,25 @@ speaker level**, stratified by label, so every child is in exactly one split.
 
 | Corpus | Children | Clips | Tasks | Split |
 |---|---:|---:|---|---|
-| **UltraSuite** – UPX (20, SSD with subtype) + UXSSD (8, SSD) + UXTD (58, typically developing) | 86 | 8,331 | disorder (binary), SSD subtype (UPX only), age, gender | stratified by SSD subtype (UPX), SSD (UXSSD), typical (UXTD) |
+| **UltraSuite** – UPX (20, SSD with subtype) + UXSSD (8, SSD) + UXTD (58, typically developing) | 86 | 4,832 | disorder (binary), SSD subtype (UPX only), age, gender, transcription (1,671 clips) | stratified by SSD subtype (UPX), SSD (UXSSD), typical (UXTD) |
 | **ENNI** (TalkBank CHILDES, TD vs. SLI) | 351 | 14,654 | description, transcription, age, gender, disorder (binary) | stratified by TD / SLI |
 | **English children** (Kennedy et al., HRI 2017) | 11 | 272 | description, transcription, dialect, gender | stratified by native / non-native |
 
 | split | UltraSuite | ENNI | English children | merged |
 |---|---:|---:|---:|---:|
-| train | 5,870 (60 children) | 10,349 (246) | 181 (7) | 16,400 |
-| test | 2,461 (26) | 4,305 (105) | 91 (4) | 6,857 |
+| train | 3,414 (60 children) | 10,349 (246) | 181 (7) | 13,944 |
+| test | 1,418 (26) | 4,305 (105) | 91 (4) | 5,814 |
 
 The speaker IDs of every split are listed in `dataset/json/split_stats.json`.
+
+**UltraSuite clips.** Only baseline sessions (UPX / UXSSD) and prompts of type *words*, *sentence* and
+*non-words* are used. These types are shared by all three subsets, so typical and disordered children say the
+same kind of material. Articulatory teaching and non-speech prompts (e.g. swallowing) are dropped. Many clips
+also contain the therapist's voice, so every clip is cropped to the child's speech. The child segments come from
+the [UltraSuite labels release](https://ultrasuite.github.io/): manually revised word / speaker labels where
+available, otherwise the automatic speaker labels. Transcriptions come from the manual UXTD transcriptions
+(therapist speech and utterances with unintelligible or partial words removed) and the manually revised UXSSD /
+UPX word labels.
 
 **Balancing the ENNI disorder question.** In ENNI, TD children produce ~83% of the clips. All clips are kept
 for transcription, age and gender, but within each split the binary disorder question is only asked for SLI
@@ -105,7 +114,9 @@ dataset/KIDS/
 ├── ultrasuite_disorder/
 │   ├── core-upx/{core,doc}/      # baseline (BL*) sessions are used
 │   ├── core-uxssd/{core,doc}/    # baseline (BL*) sessions are used
-│   └── core-uxtd/{core,doc}/
+│   ├── core-uxtd/{core,doc}/
+│   ├── labels/{upx,uxssd,uxtd}/  # UltraSuite labels release
+│   └── child_only/               # written by build_dataset.py
 ├── talkbank_dataset/v1.3/official_v1.3/
 │   ├── talkbank_childes.csv
 │   └── usable/FASA_ENNI/out/<child_id>/*.mp3 (+ .txt)
@@ -115,13 +126,16 @@ dataset/KIDS/
 ```
 
 * **UltraSuite** ([website](https://ultrasuite.github.io/download/), CC BY-NC 4.0). Each subset is ~100 GB,
-  but most of that is ultrasound. The audio, transcripts and metadata alone take ~4 GB:
+  but most of that is ultrasound. The audio, prompts, metadata and labels alone take ~4 GB:
   ```bash
   mkdir -p dataset/KIDS/ultrasuite_disorder && cd dataset/KIDS/ultrasuite_disorder
   for m in core-upx core-uxssd core-uxtd; do
     rsync -a --include='*/' --include='*.wav' --include='*.txt' --include='doc/**' --exclude='*' \
       ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/$m/ $m/
   done
+  rsync -a --include='*/' --include='doc/**' --include='speaker_labels/lab/**' --include='transcriptions/**' \
+    --include='reference_labels/speaker-labels/lab/**' --include='reference_labels/word-labels/lab/**' \
+    --exclude='*' ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/labels-uxtd-uxssd-upx/ labels/
   chmod -R u+w . && find . -type d -empty -delete && cd -
   ```
 * **English children** (Kennedy et al., *Child Speech Recognition in Human-Robot Interaction: Evaluations and

@@ -7,9 +7,11 @@ Expected layout under --data_root (audio_name paths in the JSON are relative to 
 
     dataset/KIDS/
     ├── ultrasuite_disorder/                    # official UltraSuite downloads (wav + txt + doc only)
-    │   ├── core-upx/{doc/speakers, core/<spk>/BL*/*.wav}     # 20 children with SSD (+ subtype)
-    │   ├── core-uxssd/{doc/speakers, core/<spk>/BL*/*.wav}   #  8 children with SSD
-    │   └── core-uxtd/{doc/speakers, core/<spk>/*.wav}        # 58 typically developing children
+    │   ├── core-upx/{doc, core/<spk>/BL*/*.wav}   # 20 children with SSD (+ subtype)
+    │   ├── core-uxssd/{doc, core/<spk>/BL*/*.wav} #  8 children with SSD
+    │   ├── core-uxtd/{doc, core/<spk>/*.wav}      # 58 typically developing children
+    │   ├── labels/{upx,uxssd,uxtd}/               # UltraSuite labels release (speaker / word labels, transcriptions)
+    │   └── child_only/                            # written by this script: clips cropped to the child's speech
     ├── talkbank_dataset/v1.3/official_v1.3/
     │   ├── talkbank_childes.csv                # FASA metadata
     │   └── usable/FASA_ENNI/out/<id>/*.mp3 (+ .txt)          # one folder per child
@@ -27,7 +29,9 @@ import os
 import random
 from collections import Counter, defaultdict
 
+import numpy as np
 import pandas as pd
+import soundfile as sf
 
 PROMPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompts')
 SPLITS = ('train', 'test')
@@ -89,10 +93,48 @@ def group(samples, assignment):
 
 
 # ------------------------- UltraSuite (UPX + UXSSD: disorder, UXTD: typical) -------------------------
+KEEP_PROMPT_TYPES = {'words', 'sentence', 'non-words'}  # shared by all three subsets; drops articulatory / non-speech
+SEGMENT_MARGIN = 0.05  # seconds of context kept around each child segment
+
+
+def read_lab(path):
+    """HTK label file (start / end in units of 100 ns) -> [(start_sec, end_sec, label)]."""
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        return [(int(a) / 1e7, int(b) / 1e7, lab) for a, b, lab in (line.split() for line in f if line.strip())]
+
+
+def clean_uxtd_transcription(text):
+    """Keep the child's words only. Returns None if the child produced unintelligible / partial words."""
+    tokens = [t for t in text.split() if not t.startswith('[slt:') and t != 'spn']
+    if not tokens or any(t.startswith('[') for t in tokens):  # [***], [xx***], [overlap], ...
+        return None
+    return ' '.join(tokens).lower()
+
+
+def crop(src, segments, dst):
+    """Write the concatenation of `segments` (seconds) of `src` to `dst`."""
+    audio, sr = sf.read(src)
+    pieces = [audio[max(0, int((a - SEGMENT_MARGIN) * sr)):int((b + SEGMENT_MARGIN) * sr)] for a, b in segments]
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    sf.write(dst, np.concatenate(pieces), sr)
+
+
 def build_ultrasuite(data_root, seed):
+    """Clips are restricted to word / sentence / non-word prompts and cropped to the child's speech.
+
+    Child segments come from (in order of preference) the manually revised word labels (UXSSD), the manually
+    revised speaker labels, or the automatic speaker labels of the UltraSuite labels release. The cropped audio
+    is written to ultrasuite_disorder/child_only/. Transcriptions: UXTD manual transcriptions and UXSSD
+    manually revised word labels.
+    """
     root = os.path.join(data_root, 'KIDS/ultrasuite_disorder')
-    samples, strata = [], {}
+    samples, strata, dropped = [], {}, Counter()
     for subset in ('upx', 'uxssd', 'uxtd'):
+        prompts = pd.read_csv(os.path.join(root, f'core-{subset}/doc/prompts'), sep='\t')
+        prompt_type = dict(zip(prompts['Prompt'].str.strip().str.lower(), prompts['Type']))
+        labels = os.path.join(root, 'labels', subset)
         speakers = pd.read_csv(os.path.join(root, f'core-{subset}/doc/speakers'), sep='\t').set_index('speaker_id')
         for spk, info in speakers.iterrows():
             spk_dir = os.path.join(root, f'core-{subset}/core', spk)
@@ -109,15 +151,44 @@ def build_ultrasuite(data_root, seed):
                 session_dir = os.path.join(spk_dir, session)
                 for name in sorted(f for f in os.listdir(session_dir) if f.endswith('.wav')):
                     wav = os.path.join(session_dir, name)
-                    if not os.path.exists(wav.replace('.wav', '.txt')):
+                    with open(wav.replace('.wav', '.txt')) as f:
+                        prompt = f.readline().strip().lower()
+                    if prompt_type.get(prompt) not in KEEP_PROMPT_TYPES:
+                        dropped['prompt type'] += 1
                         continue
-                    conv = qa('binary_q', random.choice(P['binary_no' if subset == 'uxtd' else 'binary_yes']))
+
+                    label_id = '-'.join(x for x in (spk, session, name[:-4]) if x)  # e.g. 01M-BL1-001A / 07F-001B
+                    words = read_lab(os.path.join(labels, f'reference_labels/word-labels/lab/{label_id}.lab'))
+                    transcription = None
+                    if words:  # manually revised word labels (child's words)
+                        segments = [(a, b) for a, b, _ in words]
+                        transcription = ' '.join(w for _, _, w in words).lower()
+                    else:
+                        spk_labels = (read_lab(os.path.join(labels, f'reference_labels/speaker-labels/lab/{label_id}.lab'))
+                                      or read_lab(os.path.join(labels, f'speaker_labels/lab/{label_id}.lab')))
+                        segments = [(a, b) for a, b, lab in spk_labels if lab == 'CHILD']
+                    if not segments:
+                        dropped['no child speech'] += 1
+                        continue
+                    trans_file = os.path.join(labels, f'transcriptions/{label_id}.txt')
+                    if subset == 'uxtd' and os.path.exists(trans_file):
+                        with open(trans_file) as f:
+                            transcription = clean_uxtd_transcription(f.read().strip())
+
+                    child_wav = os.path.join(root, 'child_only', os.path.relpath(wav, root))
+                    crop(wav, segments, child_wav)
+
+                    conv = []
+                    if transcription:
+                        conv += qa('transcribe', f'This is the english transcription, {transcription}')
+                    conv += qa('binary_q', random.choice(P['binary_no' if subset == 'uxtd' else 'binary_yes']))
                     if subset == 'upx':
                         conv += qa('multi_q', random.choice(P['multi_a']).format(info['ssd_subtype']))
                     conv += qa('age_q', random.choice(P['age_a']).format(round(float(info['age']))))
                     conv += qa('gender_q', random.choice(P['gender_girl' if info['sex'].lower() == 'female' else 'gender_boy']))
-                    samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv,
+                    samples.append({'audio_name': os.path.relpath(child_wav, data_root), 'conversation': conv,
                                     'speaker': speaker})
+    print(f'  ultrasuite: kept {len(samples)} clips, dropped {dict(dropped)}')
     # strata: UPX by SSD subtype, UXSSD as one group, UXTD as one group
     assignment = speaker_split(strata, seed)
     return group(samples, assignment), assignment
