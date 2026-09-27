@@ -1,0 +1,14 @@
+{
+  "gender_acc": 58.49,
+  "binary_disorder_acc": 82.09,
+  "age_acc": 33.98,
+  "age_group_acc": 50.09,
+  "wer": 85.56,
+  "cer": 78.33,
+  "num_samples": {
+    "age": 2931,
+    "gender": 2932,
+    "binary_disorder": 2931,
+    "transcription": 2931
+  }
+}

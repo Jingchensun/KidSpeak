@@ -1,0 +1,11 @@
+{
+  "gender_acc": 77.36,
+  "dialect_acc": 60.71,
+  "wer": 63.35,
+  "cer": 53.38,
+  "num_samples": {
+    "gender": 53,
+    "dialect": 28,
+    "transcription": 28
+  }
+}

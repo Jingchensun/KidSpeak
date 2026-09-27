@@ -1,0 +1,10 @@
+epochs: 1
+llm: jsun39/kidspeak_vicuna
+logging_step: 5
+lora_alpha: 32
+lora_dropout: 0.1
+lora_r: 16
+max_tgt_len: 256
+seed: 0
+warmup_rate: 0.1
+whisper_model: small

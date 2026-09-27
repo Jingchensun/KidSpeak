@@ -1,0 +1,13 @@
+{
+  "gender_acc": 79.21,
+  "binary_disorder_acc": 99.64,
+  "multi_disorder_acc": 34.77,
+  "age_acc": 18.64,
+  "age_group_acc": 45.16,
+  "num_samples": {
+    "binary_disorder": 279,
+    "multi_disorder": 279,
+    "age": 279,
+    "gender": 279
+  }
+}

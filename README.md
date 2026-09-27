@@ -52,9 +52,14 @@ KidSpeak/
 ├── data_prep/
 │   ├── build_dataset.py  # raw corpora -> instruction JSON (optional)
 │   └── prompts/          # question / answer templates
-└── scripts/
-    ├── train.sh
-    └── eval.sh
+├── scripts/
+│   ├── train.sh
+│   └── eval.sh
+│   # created at run time (not tracked by git):
+├── envs/                 # conda environment
+├── dataset/              # json/ + KIDS/ audio
+├── checkpoint/           # trained checkpoints
+└── outputs/              # predictions and metrics
 ```
 
 ## 1. Installation
@@ -149,12 +154,13 @@ This runs `train.py` on `dataset/json/merged_train.json` and writes a checkpoint
 ## 4. Evaluation
 
 ```bash
-bash scripts/eval.sh small 9 test  # <whisper_model> <epoch> <split: test | val>
+bash scripts/eval.sh small 9 test 4   # <whisper_model> <epoch> <split: test | val> <num_gpus>
 ```
 
 For each dataset of the split (UltraSuite, ENNI, English children), the script:
 
-1. runs `inference.py`, which asks every question of each test conversation in turn and writes
+1. runs `inference.py` on `<num_gpus>` shards in parallel (one per GPU, batched generation with
+   `--batch_size 16`). It asks every question of each conversation in turn and writes
    `outputs/kidspeak_small/epoch_9/test/<task>.jsonl`, and
 2. runs `compute_metrics.py`, which scores the predictions and writes `<task>.metrics.json`:
 
@@ -172,6 +178,27 @@ python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
     --test_file dataset/json/ultrasuite_disorder_test.json --output outputs/ultrasuite.jsonl
 python compute_metrics.py --pred outputs/ultrasuite.jsonl
 ```
+
+## 5. Reproduction check (1 epoch)
+
+We re-ran the full pipeline from a fresh conda environment in `envs/`, with all data inside the repository
+(JSON from Hugging Face, audio from the sources above, both in `dataset/`) → `bash scripts/train.sh small 4 1` →
+`bash scripts/eval.sh small 0 {val,test} 4`. The model uses Whisper-small, was trained for **1 epoch**
+(775 steps, 12.5 min on 4× RTX A6000) and reached a final training loss of ≈0.29. Evaluation on 4 GPUs
+took 9 min for test and 15 min for val.
+
+| Dataset | Split | Gender | Binary disorder | Disorder type | Age (exact) | Age group | Dialect | WER ↓ | CER ↓ |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| UltraSuite | val  | 80.11 | 100.00 | 33.87 | 21.15 | 46.24 | – | – | – |
+| UltraSuite | test | 79.21 | 99.64 | 34.77 | 18.64 | 45.16 | – | – | – |
+| ENNI | val  | 58.49 | 82.09 | – | 33.98 | 50.09 | – | 85.56 | 78.33 |
+| ENNI | test | 58.53 | 82.54 | – | 34.99 | 51.84 | – | 70.91 | 62.93 |
+| English children | val  | 72.28 | – | – | – | – | 57.41 | 55.12 | 46.11 |
+| English children | test | 77.36 | – | – | – | – | 60.71 | 63.35 | 53.38 |
+
+All numbers are in %. This is a 1-epoch sanity run, not the paper setting (10 epochs), so the numbers
+are not comparable to those in the paper. The predictions, metrics, training log and config
+are in [`outputs/kidspeak_small/epoch_0/`](outputs/kidspeak_small/epoch_0).
 
 ## Citation
 
