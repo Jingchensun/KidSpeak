@@ -5,12 +5,15 @@ the prompt templates in data_prep/prompts, then scored with simple keyword / reg
 
     task              question templates                  metric
     ----------------  ----------------------------------  -----------------------------------------
-    gender            gender_q.txt, whatyouhear.txt       accuracy (boy / girl)
+    gender            gender_q.txt                        accuracy (boy / girl)
     binary_disorder   disorder_binary_q.txt               accuracy (typical vs. impaired)
     multi_disorder    disorder_multi_q.txt                accuracy (6 SSD subtypes)
     dialect           dialect.txt                         accuracy
     transcription     transctibe_english.txt              WER / CER (%)
     age               age_q.txt                           exact-age accuracy and age-group accuracy
+
+Every classification task also reports its majority-class baseline; the binary disorder task also reports
+the balanced accuracy.
 
 Example:
     python compute_metrics.py --pred outputs/kidspeak_small/ultrasuite.jsonl
@@ -19,7 +22,7 @@ import argparse
 import json
 import os
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import jiwer
 
@@ -99,65 +102,55 @@ def strip_prefix(text, prefixes):
 
 
 def compute_metrics(records, prompts):
-    correct, total = defaultdict(int), defaultdict(int)
+    """Accuracy per classification task, WER / CER for transcription.
+
+    For every classification task the majority-class baseline (always answering the most frequent reference
+    label) is reported next to the accuracy, and the binary disorder task also gets the balanced accuracy
+    (mean recall of the two classes).
+    """
+    pairs = defaultdict(list)  # task -> [(predicted label, reference label)]
     hyps, refs = [], []
 
     for r in records:
         q, pred, gt = r['question'], r['prediction'], r['answer']
-
-        if q in prompts['whatyouhear']:
-            # "What do you hear?" -> the answer mentions a boy / girl / child
-            for k in ('boy', 'girl'):
-                if k in pred:
-                    total['gender'] += 1
-                    correct['gender'] += k in gt
-
-        elif q in prompts['gender']:
-            total['gender'] += 1
-            correct['gender'] += gender_label(pred) == gender_label(gt)
-
+        if q in prompts['gender']:
+            pairs['gender'].append((gender_label(pred), gender_label(gt)))
         elif q in prompts['dialect']:
-            total['dialect'] += 1
             key = 'The speaker sounds to be '
-            correct['dialect'] += key in pred and key in gt and pred.split(key)[1].strip() == gt.split(key)[1].strip()
-
+            pairs['dialect'].append((pred.split(key)[1].strip() if key in pred else None, gt.split(key)[1].strip()))
         elif q in prompts['binary_disorder']:
-            total['binary_disorder'] += 1
-            p, g = binary_disorder_label(pred, prompts), binary_disorder_label(gt, prompts)
-            correct['binary_disorder'] += p is not None and p == g
-
+            pairs['binary_disorder'].append((binary_disorder_label(pred, prompts), binary_disorder_label(gt, prompts)))
         elif q in prompts['multi_disorder']:
-            total['multi_disorder'] += 1
-            p = disorder_type(pred)
-            correct['multi_disorder'] += p is not None and p == disorder_type(gt)
-
+            pairs['multi_disorder'].append((disorder_type(pred), disorder_type(gt)))
+        elif q in prompts['age']:
+            p, g = parse_age(pred), parse_age(gt)
+            if g is not None:
+                pairs['age'].append((p, g))
+                pairs['age_group'].append((age_group(p) if p is not None else None, age_group(g)))
         elif q in prompts['transcription']:
             hyp = strip_prefix(pred, TRANSCRIPTION_PREFIXES)
             ref = strip_prefix(gt, TRANSCRIPTION_PREFIXES[:1])
-            if hyp is not None and ref:
-                hyps.append(hyp)
+            if ref:
+                hyps.append(hyp or '')
                 refs.append(ref)
 
-        elif q in prompts['age']:
-            p, g = parse_age(pred), parse_age(gt)
-            if g is None:
-                continue
-            total['age'] += 1
-            correct['age'] += p == g
-            correct['age_group'] += p is not None and age_group(p) is not None and age_group(p) == age_group(g)
-
-    results = {}
-    for task in ['gender', 'binary_disorder', 'multi_disorder', 'dialect', 'age']:
-        if total[task]:
-            results[f'{task}_acc'] = round(100 * correct[task] / total[task], 2)
-    if total['age']:
-        results['age_group_acc'] = round(100 * correct['age_group'] / total['age'], 2)
+    results, num_samples = {}, {}
+    for task in ['gender', 'binary_disorder', 'multi_disorder', 'dialect', 'age', 'age_group']:
+        if not pairs[task]:
+            continue
+        ref_counts = Counter(g for _, g in pairs[task])
+        results[f'{task}_acc'] = round(100 * sum(p == g for p, g in pairs[task]) / len(pairs[task]), 2)
+        results[f'{task}_majority_baseline'] = round(100 * ref_counts.most_common(1)[0][1] / len(pairs[task]), 2)
+        num_samples[task] = len(pairs[task])
+    if pairs['binary_disorder']:
+        recalls = [sum(p == g for p, g in pairs['binary_disorder'] if g == c) / n
+                   for c, n in Counter(g for _, g in pairs['binary_disorder']).items()]
+        results['binary_disorder_balanced_acc'] = round(100 * sum(recalls) / len(recalls), 2)
     if hyps:
         results['wer'] = round(100 * jiwer.wer(refs, hyps), 2)
         results['cer'] = round(100 * jiwer.cer(refs, hyps), 2)
-    results['num_samples'] = {k: v for k, v in total.items() if v}
-    if hyps:
-        results['num_samples']['transcription'] = len(hyps)
+        num_samples['transcription'] = len(hyps)
+    results['num_samples'] = num_samples
     return results
 
 

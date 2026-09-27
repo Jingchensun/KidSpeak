@@ -196,7 +196,7 @@ This runs `train.py` on `dataset/json/merged_train.json` and writes a checkpoint
 ## 4. Evaluation
 
 ```bash
-bash scripts/eval.sh small 9 test 4   # <whisper_model> <epoch> <split> <num_gpus>
+bash scripts/eval.sh small 9 test 4   # <whisper_model> <epoch | untrained> <split> <num_gpus>
 ```
 
 For each dataset of the split (UltraSuite, ENNI, English children), the script:
@@ -221,30 +221,55 @@ python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
 python compute_metrics.py --pred outputs/ultrasuite.jsonl
 ```
 
-## 5. Reproduction check (1 epoch)
+## 5. Results (1 epoch)
 
-> **Note:** these numbers were obtained with the earlier *utterance-level random* split, where the same
-> children appear in train and test. They are kept for reference and will be replaced by results on the
-> speaker-disjoint split above.
+A sanity run on the speaker-disjoint 7:3 split: Whisper-small, **1 epoch** of instruction tuning (871 steps,
+~13 min on 4× RTX A6000), evaluated on the test split of each dataset. The rows are:
 
-We re-ran the full pipeline from a fresh conda environment in `envs/`, with all data inside the repository
-(JSON from Hugging Face, audio from the sources above, both in `dataset/`) → `bash scripts/train.sh small 4 1` →
-`bash scripts/eval.sh small 0 {val,test} 4`. The model uses Whisper-small, was trained for **1 epoch**
-(775 steps, 12.5 min on 4× RTX A6000) and reached a final training loss of ≈0.29. Evaluation on 4 GPUs
-took 9 min for test and 15 min for val.
+* **Majority class**: always give the most frequent test label of each classification task (50% balanced
+  accuracy for the binary disorder task by definition). There is no such baseline for transcription.
+* **Before tuning**: the same model before instruction tuning (randomly initialised audio projection, base
+  Vicuna, no LoRA), with `bash scripts/eval.sh small untrained test 4`. It mostly returns empty or degenerate
+  text ("1111…"), so every score is near 0.
+* **Instruction-tuned (1 epoch)**: `bash scripts/train.sh small 4 1` then `bash scripts/eval.sh small 0 test 4`.
 
-| Dataset | Split | Gender | Binary disorder | Disorder type | Age (exact) | Age group | Dialect | WER ↓ | CER ↓ |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| UltraSuite | val  | 80.11 | 100.00 | 33.87 | 21.15 | 46.24 | – | – | – |
-| UltraSuite | test | 79.21 | 99.64 | 34.77 | 18.64 | 45.16 | – | – | – |
-| ENNI | val  | 58.49 | 82.09 | – | 33.98 | 50.09 | – | 85.56 | 78.33 |
-| ENNI | test | 58.53 | 82.54 | – | 34.99 | 51.84 | – | 70.91 | 62.93 |
-| English children | val  | 72.28 | – | – | – | – | 57.41 | 55.12 | 46.11 |
-| English children | test | 77.36 | – | – | – | – | 60.71 | 63.35 | 53.38 |
+Accuracies and error rates are in %. The tables are produced by `scripts/summarize_results.py`.
 
-All numbers are in %. This is a 1-epoch sanity run, not the paper setting (10 epochs), so the numbers
-are not comparable to those in the paper. The predictions, metrics, training log and config
-are in [`outputs/kidspeak_small/epoch_0/`](outputs/kidspeak_small/epoch_0).
+**UltraSuite** (test: gender 1,418, binary disorder 915, multi disorder 827, age 1,418, age group 1,418, transcription 460)
+
+| | Disorder acc | Disorder bal. acc | SSD subtype acc | Age acc | Age-group acc | Gender acc | WER ↓ | CER ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Majority class | 52.0 | 50.0 | 23.0 | 23.0 | 57.8 | 67.8 | – | – |
+| Before tuning | 0.0 | 0.0 | 0.0 | 0.0 | 0.1 | 0.0 | 100.0 | 100.0 |
+| Instruction-tuned (1 epoch) | 91.0 | 91.1 | 21.5 | 11.1 | 39.2 | 67.8 | 36.7 | 23.7 |
+
+**ENNI** (test: gender 4,305, binary disorder 1,542, age 4,305, age group 4,305, transcription 4,305)
+
+| | Disorder acc | Disorder bal. acc | Age acc | Age-group acc | Gender acc | WER ↓ | CER ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Majority class | 50.1 | 50.0 | 21.7 | 54.3 | 56.3 | – | – |
+| Before tuning | 0.0 | 0.0 | 0.0 | 0.3 | 0.0 | 100.0 | 100.0 |
+| Instruction-tuned (1 epoch) | 55.5 | 55.4 | 30.2 | 53.9 | 60.4 | 114.4 | 100.7 |
+
+**English children** (test: gender 91, dialect 91, transcription 91)
+
+| | Gender acc | Native-lang. acc | WER ↓ | CER ↓ |
+|---|---:|---:|---:|---:|
+| Majority class | 58.2 | 58.2 | – | – |
+| Before tuning | 0.0 | 0.0 | 100.0 | 100.0 |
+| Instruction-tuned (1 epoch) | 53.9 | 48.4 | 60.9 | 49.8 |
+
+Notes:
+
+* After one epoch, the model has learned the binary disorder task on UltraSuite (91% vs. 50% balanced accuracy).
+  On ENNI, detecting SLI (a language, not an articulation, impairment) from single utterances stays near chance.
+* SSD subtype, age and native-language accuracy are at or below the majority baseline: these labels
+  describe the child, and the test children are unseen, so one epoch is not enough to generalise.
+* ENNI WER is above 100% because a few answers loop until the token limit, and every extra word is counted
+  as an insertion. Most utterances are transcribed reasonably (e.g. "and they go home").
+* The untrained model is scored with `--max_new_tokens 64` (it rarely stops on its own); all other runs use 256.
+* Metrics, the training log and the config are in `outputs/kidspeak_small/`. The predictions (`*.jsonl`)
+  are not tracked; re-run `scripts/eval.sh` to regenerate them.
 
 ## Citation
 

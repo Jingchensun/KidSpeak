@@ -1,0 +1,23 @@
+{
+  "gender_acc": 0.0,
+  "gender_majority_baseline": 67.84,
+  "binary_disorder_acc": 0.0,
+  "binary_disorder_majority_baseline": 52.02,
+  "multi_disorder_acc": 0.0,
+  "multi_disorder_majority_baseline": 22.97,
+  "age_acc": 0.0,
+  "age_majority_baseline": 22.99,
+  "age_group_acc": 0.07,
+  "age_group_majority_baseline": 57.76,
+  "binary_disorder_balanced_acc": 0.0,
+  "wer": 100.0,
+  "cer": 100.0,
+  "num_samples": {
+    "gender": 1418,
+    "binary_disorder": 915,
+    "multi_disorder": 827,
+    "age": 1418,
+    "age_group": 1418,
+    "transcription": 460
+  }
+}

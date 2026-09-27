@@ -28,12 +28,13 @@ from kidspeak import KidSpeak
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ckpt', type=str, required=True, help='pytorch_model_<epoch>.pt saved by train.py')
+    parser.add_argument('--ckpt', type=str, default=None,
+                        help='pytorch_model_<epoch>.pt saved by train.py; omit to evaluate the untrained model')
     parser.add_argument('--test_file', type=str, required=True)
     parser.add_argument('--audio_root', type=str, default='dataset')
     parser.add_argument('--output', type=str, required=True)
     parser.add_argument('--config', type=str, default=None,
-                        help='defaults to the config.yaml saved next to the checkpoint')
+                        help='defaults to the config.yaml saved next to the checkpoint, or configs/kidspeak.yaml')
     parser.add_argument('--max_new_tokens', type=int, default=256)
     parser.add_argument('--top_p', type=float, default=0.01)
     parser.add_argument('--temperature', type=float, default=1.0)
@@ -45,12 +46,16 @@ def parse_args():
 
 def main():
     args = parse_args()
-    config = args.config or os.path.join(os.path.dirname(args.ckpt), 'config.yaml')
+    config = args.config or (os.path.join(os.path.dirname(args.ckpt), 'config.yaml') if args.ckpt else 'configs/kidspeak.yaml')
     with open(config) as f:
         cfg = yaml.safe_load(f)
 
+    torch.manual_seed(0)  # the untrained audio projection is initialised the same way in every shard
     model = KidSpeak(**cfg)
-    model.load_trainable_state_dict(torch.load(args.ckpt, map_location='cpu'))
+    if args.ckpt:
+        model.load_trainable_state_dict(torch.load(args.ckpt, map_location='cpu'))
+    else:
+        print('[!] No checkpoint: evaluating the untrained model (random audio projection, base LLM)')
     model = model.eval().half().cuda()
 
     with open(args.test_file) as f:
