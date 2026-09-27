@@ -75,49 +75,72 @@ pip install -r requirements.txt
 
 ## 2. Data
 
+KidSpeak is trained on three corpora of child speech. All splits are **speaker-disjoint**: every child is
+in exactly one of train / val / test.
+
+| Corpus | Children | Clips | Tasks | Split |
+|---|---:|---:|---|---|
+| **UltraSuite** – UPX (20, SSD with subtype) + UXSSD (8, SSD) + UXTD (58, typically developing) | 86 | 8,331 | disorder (binary), SSD subtype (UPX only), age, gender | UXTD: official speaker split; UPX / UXSSD: stratified by SSD subtype |
+| **ENNI** (TalkBank CHILDES, TD vs. SLI) | 351 | 14,654 | description, transcription, age, gender, disorder (binary) | stratified by TD / SLI |
+| **English children** (Kennedy et al., HRI 2017) | 11 | 272 | description, transcription, dialect, gender | stratified by native / non-native |
+
+| split | UltraSuite | ENNI | English children | merged |
+|---|---:|---:|---:|---:|
+| train | 5,669 (58 children) | 10,309 (245) | 181 (7) | 16,159 |
+| val | 763 (9) | 2,135 (53) | 46 (2) | 2,944 |
+| test | 1,899 (19) | 2,210 (53) | 45 (2) | 4,154 |
+
+The speaker IDs of every split are listed in `dataset/json/split_stats.json`.
+
 ### 2.1 Audio
 
-Download the raw audio and put it under `dataset/KIDS/`. The JSON files refer to audio by paths relative
-to `dataset/`.
+Put the audio under `dataset/KIDS/`. The JSON files refer to audio by paths relative to `dataset/`.
 
 ```
 dataset/KIDS/
-├── ultrasuite_disorder/        # UltraSuite UPX (speech sound disorders)
-│   └── core-upx/{core,doc}/
+├── ultrasuite_disorder/
+│   ├── core-upx/{core,doc}/      # baseline (BL*) sessions are used
+│   ├── core-uxssd/{core,doc}/    # baseline (BL*) sessions are used
+│   └── core-uxtd/{core,doc}/
 ├── talkbank_dataset/v1.3/official_v1.3/
 │   ├── talkbank_childes.csv
-│   └── usable/FASA_ENNI/out/<id>/*.mp3
-└── english_children/           # Kennedy et al. (HRI 2017), native / non-native UK children
+│   └── usable/FASA_ENNI/out/<child_id>/*.mp3 (+ .txt)
+└── english_children/
     ├── english_free_speech/files_cut_by_sentences/
     └── english_words_sentences/
 ```
 
-* **UltraSuite UPX:** get it from the [UltraSuite website](https://ultrasuite.github.io/download/). Only
-  `core-upx` is needed (~191 GB):
-  `mkdir -p dataset/KIDS/ultrasuite_disorder && rsync -av ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/core-upx dataset/KIDS/ultrasuite_disorder/`
-* **English children:** this is the child speech corpus from Kennedy et al., *Child Speech Recognition in
-  Human-Robot Interaction: Evaluations and Recommendations* (HRI 2017), licensed CC-BY 4.0. Download it
-  from [Zenodo](https://zenodo.org/records/200495) and unzip it into `dataset/KIDS/`:
+* **UltraSuite** ([website](https://ultrasuite.github.io/download/), CC BY-NC 4.0). Each subset is ~100 GB,
+  but most of that is ultrasound. The audio, transcripts and metadata alone take ~4 GB:
+  ```bash
+  mkdir -p dataset/KIDS/ultrasuite_disorder && cd dataset/KIDS/ultrasuite_disorder
+  for m in core-upx core-uxssd core-uxtd; do
+    rsync -a --include='*/' --include='*.wav' --include='*.txt' --include='doc/**' --exclude='*' \
+      ultrasuite-rsync.inf.ed.ac.uk::ultrasuite/$m/ $m/
+  done
+  chmod -R u+w . && find . -type d -empty -delete && cd -
+  ```
+* **English children** (Kennedy et al., *Child Speech Recognition in Human-Robot Interaction: Evaluations and
+  Recommendations*, HRI 2017, CC BY 4.0). Download it from [Zenodo](https://zenodo.org/records/200495):
   `wget https://zenodo.org/records/200495/files/english_children.zip && unzip english_children.zip -d dataset/KIDS/`
-* **TalkBank ENNI:** the audio and transcripts come from the
-  [ENNI corpus](https://talkbank.org/childes/access/Clinical-Eng/ENNI.html) in CHILDES. They are segmented
-  into utterances with our aligner **FASA** (see the paper). You need to follow the TalkBank usage rules.
+* **ENNI** (TalkBank CHILDES, CC BY-NC-SA 3.0). The recordings of the
+  [ENNI corpus](https://talkbank.org/childes/access/Clinical-Eng/ENNI.html) are segmented into utterances
+  with our aligner **FASA** (see the paper). You must follow the TalkBank Ground Rules.
 
 ### 2.2 Instruction JSON
 
-Download the instruction-tuning files used in the paper from Hugging Face:
+Build the multi-turn instruction data from the audio and metadata:
 
 ```bash
-huggingface-cli download jsun39/KidSpeak-Instruct --repo-type dataset --local-dir dataset/json
+python data_prep/build_dataset.py --data_root dataset --output_dir dataset/json
 ```
 
-| split | UltraSuite | ENNI | English children | merged |
-|---|---:|---:|---:|---:|
-| train | 1,952 | 10,257 | 190 | 12,399 |
-| val | 558 | 2,931 | 54 | 3,543 |
-| test | 279 | 1,466 | 28 | 1,773 |
+This writes `{ultrasuite,enni,english_children}_{train,val,test}.json`, `merged_{train,val,test}.json`
+and `split_stats.json`. The same files are also available on Hugging Face:
+`huggingface-cli download jsun39/KidSpeak-Instruct --repo-type dataset --local-dir dataset/json`.
 
-Each sample is one audio clip with a multi-turn conversation:
+Each sample is one audio clip with a multi-turn conversation. The questions are sampled from the
+templates in `data_prep/prompts/`, and the answers are filled in from the metadata:
 
 ```json
 {
@@ -130,10 +153,6 @@ Each sample is one audio clip with a multi-turn conversation:
   ]
 }
 ```
-
-*Optional:* you can rebuild the JSON files from the raw data with
-`python data_prep/build_dataset.py --data_root dataset --output_dir dataset/json`. The prompts are sampled at
-random, so the rebuilt files will not be identical to the released ones.
 
 ## 3. Training
 
@@ -175,11 +194,15 @@ To score a single test file:
 
 ```bash
 python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
-    --test_file dataset/json/ultrasuite_disorder_test.json --output outputs/ultrasuite.jsonl
+    --test_file dataset/json/ultrasuite_test.json --output outputs/ultrasuite.jsonl
 python compute_metrics.py --pred outputs/ultrasuite.jsonl
 ```
 
 ## 5. Reproduction check (1 epoch)
+
+> **Note:** these numbers were obtained with the earlier *utterance-level random* split, where the same
+> children appear in train and test. They are kept for reference and will be replaced by results on the
+> speaker-disjoint split above.
 
 We re-ran the full pipeline from a fresh conda environment in `envs/`, with all data inside the repository
 (JSON from Hugging Face, audio from the sources above, both in `dataset/`) → `bash scripts/train.sh small 4 1` →

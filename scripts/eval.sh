@@ -12,7 +12,7 @@ CKPT=checkpoint/kidspeak_${WHISPER}/pytorch_model_${EPOCH}.pt
 OUT=outputs/kidspeak_${WHISPER}/epoch_${EPOCH}/${SPLIT}
 mkdir -p ${OUT}
 
-for TASK in ultrasuite_disorder talkbank_v1_3_enni_post english_children; do
+for TASK in ultrasuite enni english_children; do
   PRED=${OUT}/${TASK}.jsonl
   PIDS=()
   for ((i = 0; i < NUM_GPUS; i++)); do

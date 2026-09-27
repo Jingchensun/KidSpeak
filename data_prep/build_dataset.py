@@ -1,35 +1,35 @@
 """Build the KidSpeak instruction-tuning JSON files from the raw corpora.
 
+All splits are speaker-disjoint: every child appears in exactly one of train / val / test.
+
 Expected layout under --data_root (audio_name paths in the JSON are relative to it):
 
     dataset/KIDS/
-    ├── ultrasuite_disorder/
-    │   └── core-upx/                      # official UltraSuite download
-    │       ├── doc/speakers               # speaker metadata incl. SSD subtype (TSV)
-    │       └── core/<speaker>/BL*/*.wav (+ .txt)
+    ├── ultrasuite_disorder/                    # official UltraSuite downloads (wav + txt + doc only)
+    │   ├── core-upx/{doc/speakers, core/<spk>/BL*/*.wav}     # 20 children with SSD (+ subtype)
+    │   ├── core-uxssd/{doc/speakers, core/<spk>/BL*/*.wav}   #  8 children with SSD
+    │   └── core-uxtd/{doc/speakers, core/<spk>/*.wav}        # 58 typically developing children
     ├── talkbank_dataset/v1.3/official_v1.3/
-    │   ├── talkbank_childes.csv           # FASA metadata
-    │   └── usable/FASA_ENNI/out/<id>/*.mp3 (+ .txt)
-    └── english_children/                  # english_children.zip from https://zenodo.org/records/200495
-        ├── english_free_speech/files_cut_by_sentences/**.wav
-        └── english_words_sentences/<speaker>/**/studio_mic/sentences/*.wav
+    │   ├── talkbank_childes.csv                # FASA metadata
+    │   └── usable/FASA_ENNI/out/<id>/*.mp3 (+ .txt)          # one folder per child
+    └── english_children/                       # english_children.zip from https://zenodo.org/records/200495
+        ├── english_free_speech/files_cut_by_sentences/<spk>/*.wav
+        └── english_words_sentences/<spk>/**/studio_mic/sentences/*.wav
 
-Outputs (in --output_dir): {ultrasuite_disorder,talkbank_v1_3_enni_post,english_children}_{train,val,test}.json
-and merged_{train,val,test}.json.
-
-Note: prompts are sampled randomly, so a rebuild is not byte-identical to the released JSON files.
-Use the released files (see README) to reproduce the paper numbers.
+Outputs (in --output_dir): {ultrasuite,enni,english_children}_{train,val,test}.json,
+merged_{train,val,test}.json and split_stats.json.
 """
 import argparse
 import ast
 import json
 import os
 import random
+from collections import defaultdict
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 PROMPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompts')
+SPLITS = ('train', 'val', 'test')
 
 
 def load_prompts(name):
@@ -59,56 +59,88 @@ def qa(question_key, answer):
     return [{'from': 'human', 'value': random.choice(P[question_key])}, {'from': 'gpt', 'value': answer}]
 
 
-def split(samples, seeds=(42, 42)):
-    """70 / 20 / 10 random split."""
-    train, rest = train_test_split(samples, test_size=0.3, random_state=seeds[0])
-    val, test = train_test_split(rest, test_size=1 / 3, random_state=seeds[1])
-    return {'train': train, 'val': val, 'test': test}
+def speaker_split(speaker_label, seed, val_ratio=0.15, test_ratio=0.15):
+    """Stratified speaker-level split. `speaker_label` maps speaker -> stratum (e.g. TD / SLI).
+
+    Within each stratum, at least one speaker goes to test (if the stratum has >= 2 speakers);
+    val only takes speakers if at least one is left for train.
+    """
+    rng = random.Random(seed)
+    by_label = defaultdict(list)
+    for spk, label in sorted(speaker_label.items()):
+        by_label[label].append(spk)
+    assignment = {}
+    for label in sorted(by_label):
+        spks = by_label[label]
+        rng.shuffle(spks)
+        n = len(spks)
+        n_test = max(1, round(n * test_ratio)) if n >= 2 else 0
+        n_val = round(n * val_ratio) if n - n_test - round(n * val_ratio) >= 1 else 0
+        for i, spk in enumerate(spks):
+            assignment[spk] = 'test' if i < n_test else 'val' if i < n_test + n_val else 'train'
+    return assignment
 
 
-# ------------------------- UltraSuite (speech sound disorders) -------------------------
-def build_ultrasuite(data_root):
+def group(samples, assignment):
+    splits = {s: [] for s in SPLITS}
+    for sample in samples:
+        splits[assignment[sample.pop('speaker')]].append(sample)
+    return splits
+
+
+# ------------------------- UltraSuite (UPX + UXSSD: disorder, UXTD: typical) -------------------------
+def build_ultrasuite(data_root, seed):
     root = os.path.join(data_root, 'KIDS/ultrasuite_disorder')
-    speakers = pd.read_csv(os.path.join(root, 'core-upx/doc/speakers'), sep='\t')
-    subtype = dict(zip(speakers['speaker_id'], speakers['ssd_subtype']))
-    age = dict(zip(speakers['speaker_id'], speakers['age']))
-    sex = dict(zip(speakers['speaker_id'], speakers['sex']))
-
-    samples = []
-    for dirpath, _, files in sorted(os.walk(os.path.join(root, 'core-upx/core'))):
-        session, speaker = dirpath.split('/')[-1], dirpath.split('/')[-2]
-        if 'BL' not in session or speaker not in subtype:  # baseline sessions only
-            continue
-        for name in sorted(f for f in files if f.endswith('.wav')):
-            wav = os.path.join(dirpath, name)
-            if not os.path.exists(wav.replace('.wav', '.txt')):
+    samples, strata, official = [], {}, {}
+    for subset in ('upx', 'uxssd', 'uxtd'):
+        speakers = pd.read_csv(os.path.join(root, f'core-{subset}/doc/speakers'), sep='\t').set_index('speaker_id')
+        for spk, info in speakers.iterrows():
+            spk_dir = os.path.join(root, f'core-{subset}/core', spk)
+            if not os.path.isdir(spk_dir):
                 continue
-            conv = qa('binary_q', random.choice(P['binary_yes']))
-            conv += qa('multi_q', random.choice(P['multi_a']).format(subtype[speaker]))
-            if speaker in age:
-                conv += qa('age_q', random.choice(P['age_a']).format(round(float(age[speaker]))))
-            if speaker in sex:
-                conv += qa('gender_q', random.choice(P['gender_girl' if sex[speaker].lower() == 'female' else 'gender_boy']))
-            samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv})
-    return split(samples)
+            speaker = f'{subset}/{spk}'  # speaker ids are only unique within a subset
+            if subset == 'uxtd':
+                sessions = ['']  # UXTD has no session folders
+                official[speaker] = {'train': 'train', 'dev': 'val', 'test': 'test'}[info['subset']]
+            else:
+                sessions = sorted(s for s in os.listdir(spk_dir) if s.startswith('BL'))  # baseline sessions only
+                strata[speaker] = info['ssd_subtype'] if subset == 'upx' else 'ssd'
+            for session in sessions:
+                session_dir = os.path.join(spk_dir, session)
+                for name in sorted(f for f in os.listdir(session_dir) if f.endswith('.wav')):
+                    wav = os.path.join(session_dir, name)
+                    if not os.path.exists(wav.replace('.wav', '.txt')):
+                        continue
+                    conv = qa('binary_q', random.choice(P['binary_no' if subset == 'uxtd' else 'binary_yes']))
+                    if subset == 'upx':
+                        conv += qa('multi_q', random.choice(P['multi_a']).format(info['ssd_subtype']))
+                    conv += qa('age_q', random.choice(P['age_a']).format(round(float(info['age']))))
+                    conv += qa('gender_q', random.choice(P['gender_girl' if info['sex'].lower() == 'female' else 'gender_boy']))
+                    samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv,
+                                    'speaker': speaker})
+    # UPX is split within each SSD subtype, UXSSD as one stratum, UXTD follows its official speaker split
+    assignment = speaker_split(strata, seed)
+    assignment.update(official)
+    return group(samples, assignment), assignment
 
 
 # ------------------------- TalkBank ENNI (TD vs. SLI) -------------------------
-def build_enni(data_root):
+def build_enni(data_root, seed):
     root = os.path.join(data_root, 'KIDS/talkbank_dataset/v1.3/official_v1.3')
     meta = pd.read_csv(os.path.join(root, 'talkbank_childes.csv'))
     meta['id_index'] = meta['audio_file'].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
     meta = meta.drop_duplicates('id_index').set_index('id_index')
 
-    samples = []
-    for dirpath, _, files in sorted(os.walk(os.path.join(root, 'usable/FASA_ENNI/out'))):
-        folder_id = os.path.basename(dirpath)
+    samples, strata = [], {}
+    out_dir = os.path.join(root, 'usable/FASA_ENNI/out')
+    for folder_id in sorted(os.listdir(out_dir)):  # one folder = one child
         if folder_id not in meta.index:
             continue
         row = meta.loc[folder_id]
         info = ast.literal_eval(row['metadata'])[0]
-        for name in sorted(f for f in files if f.endswith('.mp3')):
-            mp3 = os.path.join(dirpath, name)
+        strata[folder_id] = row['group_type']
+        for name in sorted(f for f in os.listdir(os.path.join(out_dir, folder_id)) if f.endswith('.mp3')):
+            mp3 = os.path.join(out_dir, folder_id, name)
             txt = mp3.replace('.mp3', '.txt')
             conv = []
             if os.path.exists(txt):
@@ -124,23 +156,26 @@ def build_enni(data_root):
                 conv += qa('binary_q', random.choice(P['binary_no']))
             elif row['group_type'] == 'SLI':
                 conv += qa('binary_q', random.choice(P['binary_yes']))
-            samples.append({'audio_name': os.path.relpath(mp3, data_root), 'conversation': conv})
-    return split(samples)
+            samples.append({'audio_name': os.path.relpath(mp3, data_root), 'conversation': conv,
+                            'speaker': folder_id})
+    assignment = speaker_split(strata, seed)
+    return group(samples, assignment), assignment
 
 
 # ------------------------- English children (native / non-native) -------------------------
-def build_english_children(data_root):
+def build_english_children(data_root, seed):
     root = os.path.join(data_root, 'KIDS/english_children')
     sources = [('english_free_speech/files_cut_by_sentences', False),
                ('english_words_sentences', True)]  # only studio_mic/sentences for the second one
 
-    samples = []
+    samples, strata = [], {}
     for sub, only_studio_sentences in sources:
         for dirpath, _, files in sorted(os.walk(os.path.join(root, sub))):
             if only_studio_sentences and 'studio_mic/sentences' not in dirpath:
                 continue
             for name in sorted(f for f in files if f.endswith('.wav')):
                 wav = os.path.join(dirpath, name)
+                speaker = os.path.relpath(wav, os.path.join(root, sub)).split('/')[0][:2]  # '06_M_native' -> '06'
                 if '_M_' in wav:
                     person, gender = 'boy', random.choice(P['gender_boy'])
                 elif '_F_' in wav:
@@ -148,14 +183,17 @@ def build_english_children(data_root):
                 else:
                     person, gender = 'child', random.choice(P['gender_boy'] + P['gender_girl'])
                 dialect = 'from UK' if '_native' in wav else 'not from UK' if '_nonNative' in wav else 'unknown'
+                strata[speaker] = dialect
                 sentence = ' '.join(name.split('.')[0].strip().split('_'))  # transcript is the file name
 
                 conv = qa('what_you_hear', random.choice(P['a_what']).format(person))
                 conv += qa('transcribe', f'This is the english transcription, {sentence}')
                 conv += qa('dialect', f'The speaker sounds to be {dialect}')
                 conv += qa('gender_q', gender)
-                samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv})
-    return split(samples, seeds=(52, 62))
+                samples.append({'audio_name': os.path.relpath(wav, data_root), 'conversation': conv,
+                                'speaker': speaker})
+    assignment = speaker_split(strata, seed)
+    return group(samples, assignment), assignment
 
 
 def main():
@@ -167,23 +205,26 @@ def main():
     random.seed(args.seed)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    builders = {
-        'ultrasuite_disorder': build_ultrasuite,
-        'talkbank_v1_3_enni_post': build_enni,
-        'english_children': build_english_children,
-    }
-    merged = {'train': [], 'val': [], 'test': []}
+    builders = {'ultrasuite': build_ultrasuite, 'enni': build_enni, 'english_children': build_english_children}
+    merged = {s: [] for s in SPLITS}
+    stats = {}
     for name, build in builders.items():
-        splits = build(args.data_root)
-        for s, samples in splits.items():
+        splits, assignment = build(args.data_root, args.seed)
+        stats[name] = {}
+        for s in SPLITS:
             with open(os.path.join(args.output_dir, f'{name}_{s}.json'), 'w', encoding='utf-8') as f:
-                json.dump(samples, f, ensure_ascii=False, indent=2)
-            merged[s] += samples
-        print(f'{name}: ' + ', '.join(f'{s}={len(v)}' for s, v in splits.items()))
+                json.dump(splits[s], f, ensure_ascii=False, indent=2)
+            merged[s] += splits[s]
+            speakers = sorted(k for k, v in assignment.items() if v == s)
+            stats[name][s] = {'samples': len(splits[s]), 'speakers': len(speakers), 'speaker_ids': speakers}
+        print(f'{name}: ' + ', '.join(f"{s}={stats[name][s]['samples']} ({stats[name][s]['speakers']} spk)"
+                                      for s in SPLITS))
 
-    for s, samples in merged.items():
+    for s in SPLITS:
         with open(os.path.join(args.output_dir, f'merged_{s}.json'), 'w', encoding='utf-8') as f:
-            json.dump(samples, f, ensure_ascii=False, indent=2)
+            json.dump(merged[s], f, ensure_ascii=False, indent=2)
+    with open(os.path.join(args.output_dir, 'split_stats.json'), 'w') as f:
+        json.dump(stats, f, indent=2)
     print('merged: ' + ', '.join(f'{s}={len(v)}' for s, v in merged.items()))
 
 

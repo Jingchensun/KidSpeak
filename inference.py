@@ -7,8 +7,8 @@ Results are written as JSON lines:
 
 Example:
     python inference.py --ckpt checkpoint/kidspeak_small/pytorch_model_9.pt \
-        --test_file dataset/json/ultrasuite_disorder_test.json --audio_root dataset \
-        --output outputs/kidspeak_small/ultrasuite_disorder.jsonl
+        --test_file dataset/json/ultrasuite_test.json --audio_root dataset \
+        --output outputs/kidspeak_small/ultrasuite.jsonl
 
 For multi-GPU evaluation, run one process per GPU with --num_shards N --shard_id i; each process
 handles a contiguous chunk of the test set and writes <output>.shard<i>. scripts/eval.sh does this
