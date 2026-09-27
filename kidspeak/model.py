@@ -16,12 +16,14 @@ STOP_TOKEN_ID = 2277        # token id of '###' in the LLaMA tokenizer
 
 
 class StopOnToken(StoppingCriteria):
-    def __init__(self, token_id):
+    """Stop once every sequence in the batch has produced one of `token_ids`."""
+
+    def __init__(self, token_ids):
         super().__init__()
-        self.token_id = token_id
+        self.token_ids = token_ids
 
     def __call__(self, input_ids, scores):
-        return (input_ids[0] == self.token_id).sum().item() >= 1
+        return all(any(t in row for t in self.token_ids) for row in input_ids.tolist())
 
 
 def build_one_instance(tokenizer, conversation):
@@ -145,26 +147,48 @@ class KidSpeak(nn.Module):
         return outputs.loss, token_acc
 
     @torch.no_grad()
-    def generate(self, prompt, audio_embeds, max_new_tokens=256, top_p=0.01, temperature=1.0):
-        """Generate the assistant reply for `prompt`, conditioned on pre-computed `audio_embeds` [1, 250, H].
+    def generate(self, prompts, audio_embeds, max_new_tokens=256, top_p=0.01, temperature=1.0):
+        """Generate one assistant reply per prompt, conditioned on pre-computed `audio_embeds` [B, 250, H].
 
-        For multi-turn dialogue, `prompt` already contains the previous turns in the
-        `{q}\\n### Assistant: {a}\\n### Human: {q'}` format.
+        For multi-turn dialogue, each prompt already contains the previous turns in the
+        `{q}\\n### Assistant: {a}\\n### Human: {q'}` format. Prompts of different lengths are left-padded.
         """
-        text = '</Img> ' + prompt + '\n### Assistant:'
-        text_ids = self.llama_tokenizer(text, add_special_tokens=False, return_tensors='pt').input_ids.to(self.device)
-        inputs_embeds = torch.cat([self._prefix_embeds(1), audio_embeds, self.embed_tokens(text_ids)], dim=1)
+        batch_size = len(prompts)
+        texts = ['</Img> ' + p + '\n### Assistant:' for p in prompts]
+        text_ids = [self.llama_tokenizer(t, add_special_tokens=False).input_ids for t in texts]
+        max_len = max(len(ids) for ids in text_ids)
+
+        prefix = torch.cat([self._prefix_embeds(batch_size), audio_embeds], dim=1)   # [B, P, H]
+        pad_embed = self.embed_tokens(torch.LongTensor([[self.llama_tokenizer.pad_token_id]]).to(self.device))[0, 0]
+        inputs_embeds, attention_mask = [], []
+        for i, ids in enumerate(text_ids):
+            n_pad = max_len - len(ids)
+            text = self.embed_tokens(torch.LongTensor([ids]).to(self.device))[0]
+            inputs_embeds.append(torch.cat([pad_embed.expand(n_pad, -1), prefix[i], text], dim=0))
+            attention_mask.append([0] * n_pad + [1] * (prefix.shape[1] + len(ids)))
+        inputs_embeds = torch.stack(inputs_embeds)
+        attention_mask = torch.LongTensor(attention_mask).to(self.device)
+
+        eos = self.llama_tokenizer.eos_token_id
         outputs = self.llama_model.generate(
             inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
             top_p=top_p,
             temperature=temperature,
             do_sample=True,
             use_cache=True,
-            stopping_criteria=StoppingCriteriaList([StopOnToken(STOP_TOKEN_ID)]),
+            stopping_criteria=StoppingCriteriaList([StopOnToken([STOP_TOKEN_ID, eos])]),
             pad_token_id=self.llama_tokenizer.pad_token_id,
         )
-        return self.llama_tokenizer.decode(outputs[0][:-2], skip_special_tokens=True)
+
+        replies = []
+        for row in outputs.tolist():
+            # cut each reply at its own stop token; the last two tokens ('\n', '###') are dropped
+            end = next((j for j, t in enumerate(row) if t in (STOP_TOKEN_ID, eos)), None)
+            row = row[:end + 1] if end is not None else row
+            replies.append(self.llama_tokenizer.decode(row[:-2], skip_special_tokens=True))
+        return replies
 
     # ---- checkpointing: only LoRA adapters + audio projection are saved ----
     def trainable_state_dict(self):
