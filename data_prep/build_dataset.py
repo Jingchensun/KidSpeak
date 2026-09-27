@@ -92,6 +92,39 @@ def group(samples, assignment):
     return splits
 
 
+def balance_binary_question(samples, assignment, is_majority, seed):
+    """Balance the binary disorder question within each split.
+
+    All clips are kept (for the other tasks), but the disorder question is only kept for the minority-class
+    clips and for a random subset of majority-class speakers with about the same number of clips.
+    `is_majority` maps speaker -> bool.
+    """
+    rng = random.Random(seed)
+    clips = Counter(sample['speaker'] for sample in samples)
+    for split in SPLITS:
+        in_split = [spk for spk, s in assignment.items() if s == split and spk in clips]
+        n_minority = sum(clips[spk] for spk in in_split if not is_majority[spk])
+        majority = sorted(spk for spk in in_split if is_majority[spk])
+        rng.shuffle(majority)
+        keep, n_kept = set(), 0
+        for spk in majority:
+            if n_kept >= n_minority:
+                break
+            keep.add(spk)
+            n_kept += clips[spk]
+        for sample in samples:
+            spk = sample['speaker']
+            if assignment[spk] == split and is_majority[spk] and spk not in keep:
+                sample['conversation'] = [turn for i, turn in enumerate(sample['conversation'])
+                                          if not _is_binary_turn(sample['conversation'], i)]
+
+
+def _is_binary_turn(conv, i):
+    """True for the human question and the answer of the binary disorder QA pair."""
+    q = i if i % 2 == 0 else i - 1
+    return conv[q]['value'] in P['binary_q']
+
+
 # ------------------------- UltraSuite (UPX + UXSSD: disorder, UXTD: typical) -------------------------
 KEEP_PROMPT_TYPES = {'words', 'sentence', 'non-words'}  # shared by all three subsets; drops articulatory / non-speech
 SEGMENT_MARGIN = 0.05  # seconds of context kept around each child segment
@@ -191,11 +224,12 @@ def build_ultrasuite(data_root, seed):
     print(f'  ultrasuite: kept {len(samples)} clips, dropped {dict(dropped)}')
     # strata: UPX by SSD subtype, UXSSD as one group, UXTD as one group
     assignment = speaker_split(strata, seed)
+    # SSD children (UPX + UXSSD) produce ~2/3 of the clips: balance the disorder question against UXTD
+    balance_binary_question(samples, assignment, {spk: lab != 'typical' for spk, lab in strata.items()}, seed)
     return group(samples, assignment), assignment
 
 
 # ------------------------- TalkBank ENNI (TD vs. SLI) -------------------------
-# The binary disorder question is balanced between TD and SLI clips (see below).
 def build_enni(data_root, seed):
     root = os.path.join(data_root, 'KIDS/talkbank_dataset/v1.3/official_v1.3')
     meta = pd.read_csv(os.path.join(root, 'talkbank_childes.csv'))
@@ -231,25 +265,8 @@ def build_enni(data_root, seed):
                             'speaker': folder_id})
     assignment = speaker_split(strata, seed)
 
-    # TD children produce ~83% of the clips. To balance the binary disorder question, only a random subset
-    # of TD children (per split) keeps it, so that TD and SLI clips with this question are roughly 1:1.
-    # All clips are kept for the other tasks. The disorder question is the last turn of every ENNI dialogue.
-    rng = random.Random(seed)
-    clips = Counter(sample['speaker'] for sample in samples)
-    for split in SPLITS:
-        n_sli = sum(clips[spk] for spk, s in assignment.items() if s == split and strata[spk] == 'SLI')
-        td = sorted(spk for spk, s in assignment.items() if s == split and strata[spk] == 'TD')
-        rng.shuffle(td)
-        keep, n_td = set(), 0
-        for spk in td:
-            if n_td >= n_sli:
-                break
-            keep.add(spk)
-            n_td += clips[spk]
-        for sample in samples:
-            if strata[sample['speaker']] == 'TD' and assignment[sample['speaker']] == split and sample['speaker'] not in keep:
-                assert sample['conversation'][-2]['value'] in P['binary_q']
-                sample['conversation'] = sample['conversation'][:-2]
+    # TD children produce ~83% of the clips: balance the disorder question against SLI
+    balance_binary_question(samples, assignment, {spk: lab == 'TD' for spk, lab in strata.items()}, seed)
     return group(samples, assignment), assignment
 
 

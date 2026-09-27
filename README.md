@@ -100,10 +100,15 @@ available, otherwise the automatic speaker labels. Transcriptions come from the 
 (therapist speech and utterances with unintelligible or partial words removed) and the manually revised UXSSD /
 UPX word labels.
 
-**Balancing the ENNI disorder question.** In ENNI, TD children produce ~83% of the clips. All clips are kept
-for transcription, age and gender, but within each split the binary disorder question is only asked for SLI
-clips and for a random subset of TD children with about the same number of clips. This gives
-1,756 SLI / 1,765 TD questions in train (47 / 41 children) and 769 SLI / 812 TD in test (20 / 18 children).
+**Balancing the binary disorder question.** In ENNI, TD children produce ~83% of the clips; in UltraSuite,
+SSD children produce ~2/3. All clips are kept for the other tasks, but within each split the disorder question
+is only asked for the minority class and for a random subset of majority-class children with about the same
+number of clips:
+
+| | UltraSuite (SSD / typical) | ENNI (SLI / TD) |
+|---|---:|---:|
+| train | 1,283 / 1,128 | 1,756 / 1,758 |
+| test | 476 / 439 | 769 / 773 |
 
 ### 2.1 Audio
 
