@@ -5,7 +5,7 @@
   "binary_disorder_majority_baseline": 50.13,
   "age_acc": 0.0,
   "age_majority_baseline": 21.74,
-  "age_group_acc": 0.35,
+  "age_group_acc": 0.21,
   "age_group_majority_baseline": 54.31,
   "binary_disorder_balanced_acc": 0.0,
   "wer": 100.0,

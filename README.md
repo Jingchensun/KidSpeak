@@ -234,22 +234,25 @@ A sanity run on the speaker-disjoint 7:3 split: Whisper-small, **1 epoch** of in
 * **Instruction-tuned (1 epoch)**: `bash scripts/train.sh small 4 1` then `bash scripts/eval.sh small 0 test 4`.
 
 Accuracies and error rates are in %. The tables are produced by `scripts/summarize_results.py`.
+WER / CER are corpus-level, computed with `jiwer` after normalising both sides with Whisper's
+`EnglishTextNormalizer`; an answer without the "This is the english transcription," prefix counts as an empty
+transcription. Age groups: 0-3, 4-5, 6-8, 9-12 and 13-17 years.
 
 **UltraSuite** (test: gender 1,418, binary disorder 915, multi disorder 827, age 1,418, age group 1,418, transcription 460)
 
 | | Disorder acc | Disorder bal. acc | SSD subtype acc | Age acc | Age-group acc | Gender acc | WER ↓ | CER ↓ |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Majority class | 52.0 | 50.0 | 23.0 | 23.0 | 57.8 | 67.8 | – | – |
-| Before tuning | 0.0 | 0.0 | 0.0 | 0.0 | 0.1 | 0.0 | 100.0 | 100.0 |
-| Instruction-tuned (1 epoch) | 91.0 | 91.1 | 21.5 | 11.1 | 39.2 | 67.8 | 36.7 | 23.7 |
+| Before tuning | 0.0 | 0.0 | 0.0 | 0.1 | 0.6 | 0.0 | 100.0 | 100.0 |
+| Instruction-tuned (1 epoch) | 91.3 | 91.3 | 21.5 | 11.1 | 39.2 | 67.8 | 36.7 | 23.6 |
 
 **ENNI** (test: gender 4,305, binary disorder 1,542, age 4,305, age group 4,305, transcription 4,305)
 
 | | Disorder acc | Disorder bal. acc | Age acc | Age-group acc | Gender acc | WER ↓ | CER ↓ |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Majority class | 50.1 | 50.0 | 21.7 | 54.3 | 56.3 | – | – |
-| Before tuning | 0.0 | 0.0 | 0.0 | 0.3 | 0.0 | 100.0 | 100.0 |
-| Instruction-tuned (1 epoch) | 55.5 | 55.4 | 30.2 | 53.9 | 60.4 | 114.4 | 100.7 |
+| Before tuning | 0.0 | 0.0 | 0.0 | 0.2 | 0.0 | 100.0 | 100.0 |
+| Instruction-tuned (1 epoch) | 55.7 | 55.6 | 30.2 | 53.9 | 60.4 | 114.4 | 100.7 |
 
 **English children** (test: gender 91, dialect 91, transcription 91)
 
@@ -257,7 +260,7 @@ Accuracies and error rates are in %. The tables are produced by `scripts/summari
 |---|---:|---:|---:|---:|
 | Majority class | 58.2 | 58.2 | – | – |
 | Before tuning | 0.0 | 0.0 | 100.0 | 100.0 |
-| Instruction-tuned (1 epoch) | 53.9 | 48.4 | 60.9 | 49.8 |
+| Instruction-tuned (1 epoch) | 53.9 | 48.4 | 60.0 | 49.6 |
 
 Notes:
 

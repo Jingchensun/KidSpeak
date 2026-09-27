@@ -13,7 +13,14 @@ the prompt templates in data_prep/prompts, then scored with simple keyword / reg
     age               age_q.txt                           exact-age accuracy and age-group accuracy
 
 Every classification task also reports its majority-class baseline; the binary disorder task also reports
-the balanced accuracy.
+the balanced accuracy. Questions whose reference label cannot be parsed are skipped.
+
+Transcription: the text after "This is the english transcription," is scored; an answer without that prefix
+counts as an empty transcription. References and hypotheses are normalised with Whisper's
+EnglishTextNormalizer (lower case, no punctuation, standard spellings) before computing the corpus-level
+WER / CER with jiwer, as in the Whisper paper and the Open ASR Leaderboard.
+
+Age groups (years): toddler 0-3, preschool 4-5, early school age 6-8, later school age 9-12, teenager 13-17.
 
 Example:
     python compute_metrics.py --pred outputs/kidspeak_small/ultrasuite.jsonl
@@ -25,6 +32,7 @@ import re
 from collections import Counter, defaultdict
 
 import jiwer
+from whisper.normalizers import EnglishTextNormalizer
 
 DISORDER_TYPES = [  # longest first, so that "phonological disorder" does not shadow its superstrings
     'inconsistent phonological disorder',
@@ -67,10 +75,16 @@ def gender_label(text):
 
 
 def binary_disorder_label(text, prompts):
+    """Match the answer templates first; fall back to keywords for paraphrased answers."""
     if any(p in text for p in prompts['binary_disorder_yes']):
         return 'disorder'
     if any(p in text for p in prompts['binary_disorder_no']):
         return 'typical'
+    t = text.lower()
+    if re.search(r"\b(no|not|typical|normal|free from|without)\b", t):
+        return 'typical'
+    if re.search(r'disorder|impair', t):
+        return 'disorder'
     return None
 
 
@@ -79,11 +93,12 @@ def disorder_type(text):
 
 
 def parse_age(text):
-    digits = ''.join(re.findall(r'\d+', text))
-    if digits:
-        return int(digits)
-    words = [NUMBER_WORDS[w] for w in text.lower().split() if w in NUMBER_WORDS]
-    return sum(words) if words else None
+    """The first number in the answer (digits or a number word)."""
+    match = re.search(r'\d+', text)
+    if match:
+        return int(match.group())
+    words = [NUMBER_WORDS[w] for w in re.findall(r'[a-z]+', text.lower()) if w in NUMBER_WORDS]
+    return words[0] if words else None
 
 
 def age_group(age):
@@ -116,8 +131,9 @@ def compute_metrics(records, prompts):
         if q in prompts['gender']:
             pairs['gender'].append((gender_label(pred), gender_label(gt)))
         elif q in prompts['dialect']:
-            key = 'The speaker sounds to be '
-            pairs['dialect'].append((pred.split(key)[1].strip() if key in pred else None, gt.split(key)[1].strip()))
+            key = 'the speaker sounds to be '
+            clean = lambda t: re.sub(r'[^a-z ]', '', t.lower().split(key, 1)[1]).strip() if key in t.lower() else None
+            pairs['dialect'].append((clean(pred), clean(gt)))
         elif q in prompts['binary_disorder']:
             pairs['binary_disorder'].append((binary_disorder_label(pred, prompts), binary_disorder_label(gt, prompts)))
         elif q in prompts['multi_disorder']:
@@ -136,6 +152,7 @@ def compute_metrics(records, prompts):
 
     results, num_samples = {}, {}
     for task in ['gender', 'binary_disorder', 'multi_disorder', 'dialect', 'age', 'age_group']:
+        pairs[task] = [(p, g) for p, g in pairs[task] if g is not None]  # skip unparsable references
         if not pairs[task]:
             continue
         ref_counts = Counter(g for _, g in pairs[task])
@@ -147,6 +164,10 @@ def compute_metrics(records, prompts):
                    for c, n in Counter(g for _, g in pairs['binary_disorder']).items()]
         results['binary_disorder_balanced_acc'] = round(100 * sum(recalls) / len(recalls), 2)
     if hyps:
+        normalize = EnglishTextNormalizer()
+        pairs_t = [(normalize(r), normalize(h)) for r, h in zip(refs, hyps)]
+        pairs_t = [(r, h) for r, h in pairs_t if r.strip()]
+        refs, hyps = [r for r, _ in pairs_t], [h for _, h in pairs_t]
         results['wer'] = round(100 * jiwer.wer(refs, hyps), 2)
         results['cer'] = round(100 * jiwer.cer(refs, hyps), 2)
         num_samples['transcription'] = len(hyps)
